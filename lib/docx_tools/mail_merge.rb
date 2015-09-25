@@ -1,0 +1,114 @@
+module DocxTools
+  class MailMerge
+
+    REGEXP = / MERGEFIELD "?([^ ]+?)"? (| \\\* MERGEFORMAT )/i.freeze
+    attr_accessor :document, :part_list
+
+    def initialize(file_object)
+      self.document  = Document.new(file_object)
+      self.part_list = PartList.new(document, %w[document.main header footer])
+      process_merge_fields
+    end
+
+    def fields
+      fields = Set.new
+      part_list.each_part do |part|
+        part.xpath('.//w:MergeField').each do |mf|
+          fields.add(mf.content)
+        end
+      end
+      fields.to_a
+    end
+
+    def merge(replacements = {})
+      part_list.each_part do |part|
+        replacements.each do |field, text|
+          merge_field(part, field, text)
+        end
+      end
+    end
+
+    def write(filename)
+      File.open(filename, 'w') do |file|
+        file.write(generate.string)
+      end
+    end
+
+    private
+
+      def clean
+        remaining = fields.map { |field| [field.to_sym, ''] }
+        merge(remaining.to_h)
+      end
+
+      def generate
+        clean
+        buffer = Zip::OutputStream.write_buffer do |out|
+          document.entries.each do |entry|
+            unless entry.ftype == :directory
+              out.put_next_entry(entry.name)
+              if self.part_list.has?(entry.name)
+                out.write self.part_list.get(entry.name).to_xml(indent: 0).gsub('\n', '')
+              else
+                out.write entry.get_input_stream.read
+              end
+            end
+          end
+        end
+        buffer.seek(0)
+        buffer
+      end
+
+      def merge_field(part, field, text)
+        part.xpath(".//w:MergeField[text()=\"#{field}\"]").each do |merge_field|
+          r_elem = Nokogiri::XML::Node.new('r', part)
+          t_elem = Nokogiri::XML::Node.new('t', part)
+          t_elem.content = text
+          t_elem.parent = r_elem
+          merge_field.replace(r_elem)
+        end
+      end
+
+      # replace the original convoluted tag with a simplified tag for easy searching a processing
+      def process_merge_fields
+        self.part_list.each_part do |part|
+          part.root.remove_attribute('Ignorable')
+
+          part.xpath('.//w:fldSimple/..').each do |parent|
+            parent.children.each do |child|
+              next if child.node_name != 'fldSimple'
+              instr = child.attribute('instr')
+
+              match_data = REGEXP.match(instr)
+              fail Exception, "Could not determine the name of merge field in value #{instr}" unless match_data
+
+              new_tag = Nokogiri::XML::Node.new('MergeField', part)
+              new_tag.content = match_data[1]
+              child.replace(new_tag)
+            end
+          end
+
+          part.xpath('.//w:instrText/../..').each do |parent|
+            begin_tags = parent.xpath('w:r/w:fldChar[@w:fldCharType="begin"]/..')
+            end_tags = parent.xpath('w:r/w:fldChar[@w:fldCharType="end"]/..')
+            instr_tags = parent.xpath('w:r/w:instrText').map { |x| x.content }
+
+            instr_tags.take(begin_tags.length).each_with_index do |instr, idx|
+              next unless match_data = REGEXP.match(instr)
+
+              children = parent.children
+              start_idx = children.index(begin_tags[idx]) + 1
+              end_idx = children.index(end_tags[idx])
+              children[start_idx..end_idx].each do |child|
+                child.remove
+              end
+
+              new_tag = Nokogiri::XML::Node.new('MergeField', part)
+              new_tag.content = match_data[1]
+              begin_tags[idx].replace(new_tag)
+            end
+          end
+        end
+      end
+  end
+end
