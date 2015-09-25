@@ -36,13 +36,13 @@ module DocxTools
 
     private
 
-      def clean
+      def clean_up
         remaining = fields.map { |field| [field.to_sym, ''] }
         merge(remaining.to_h)
       end
 
       def generate
-        clean
+        clean_up
         buffer = Zip::OutputStream.write_buffer do |out|
           document.entries.each do |entry|
             unless entry.ftype == :directory
@@ -76,11 +76,8 @@ module DocxTools
 
           part.xpath('.//w:fldSimple/..').each do |parent|
             parent.children.each do |child|
-              next if child.node_name != 'fldSimple'
-              instr = child.attribute('instr')
-
-              match_data = REGEXP.match(instr)
-              fail Exception, "Could not determine the name of merge field in value #{instr}" unless match_data
+              match_data = REGEXP.match(child.attribute('instr'))
+              next if (child.node_name != 'fldSimple') || !match_data
 
               new_tag = Nokogiri::XML::Node.new('MergeField', part)
               new_tag.content = match_data[1]
@@ -91,7 +88,7 @@ module DocxTools
           part.xpath('.//w:instrText/../..').each do |parent|
             begin_tags = parent.xpath('w:r/w:fldChar[@w:fldCharType="begin"]/..')
             end_tags = parent.xpath('w:r/w:fldChar[@w:fldCharType="end"]/..')
-            instr_tags = parent.xpath('w:r/w:instrText').map { |x| x.content }
+            instr_tags = parent.xpath('w:r/w:instrText').map(&:content)
 
             instr_tags.take(begin_tags.length).each_with_index do |instr, idx|
               next unless match_data = REGEXP.match(instr)
