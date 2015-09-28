@@ -69,7 +69,7 @@ module DocxTools
         end
       end
 
-      # replace the original convoluted tag with a simplified tag for easy searching a processing
+      # replace the original convoluted tag with a simplified tag for easy searching and processing
       def process_merge_fields
         self.part_list.each_part do |part|
           part.root.remove_attribute('Ignorable')
