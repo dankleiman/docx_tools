@@ -61,11 +61,10 @@ module DocxTools
 
       def merge_field(part, field, text)
         part.xpath(".//w:MergeField[text()=\"#{field}\"]").each do |merge_field|
-          r_elem = Nokogiri::XML::Node.new('r', part)
           t_elem = Nokogiri::XML::Node.new('t', part)
           t_elem.content = text
-          t_elem.parent = r_elem
-          merge_field.replace(r_elem)
+          t_elem.parent = merge_field.parent
+          merge_field.replace(t_elem)
         end
       end
 
@@ -88,21 +87,26 @@ module DocxTools
           part.xpath('.//w:instrText/../..').each do |parent|
             begin_tags = parent.xpath('w:r/w:fldChar[@w:fldCharType="begin"]/..')
             end_tags = parent.xpath('w:r/w:fldChar[@w:fldCharType="end"]/..')
-            instr_tags = parent.xpath('w:r/w:instrText').map(&:content)
+            instr_tags = parent.xpath('w:r/w:instrText')
+            instr_tag_content = instr_tags.map(&:content)
 
-            instr_tags.take(begin_tags.length).each_with_index do |instr, idx|
+            instr_tag_content.take(begin_tags.length).each_with_index do |instr, idx|
               next unless match_data = REGEXP.match(instr)
+
+              new_tag = Nokogiri::XML::Node.new('MergeField', part)
+              new_tag.content = match_data[1]
 
               children = parent.children
               start_idx = children.index(begin_tags[idx]) + 1
               end_idx = children.index(end_tags[idx])
               children[start_idx..end_idx].each do |child|
-                child.remove
+                instr_node = child.xpath('w:instrText')
+                if instr_node.empty?
+                  child.remove
+                else
+                  instr_node.first.replace(new_tag)
+                end
               end
-
-              new_tag = Nokogiri::XML::Node.new('MergeField', part)
-              new_tag.content = match_data[1]
-              begin_tags[idx].replace(new_tag)
             end
           end
         end
