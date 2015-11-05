@@ -6,7 +6,7 @@ module DocxTools
 
     def initialize(file_object)
       self.document  = Document.new(file_object)
-      self.part_list = PartList.new(document, %w[document.main header footer])
+      self.part_list = PartList.new(document, %w[document.main header footer settings])
       process_merge_fields
     end
 
@@ -72,6 +72,12 @@ module DocxTools
       def process_merge_fields
         self.part_list.each_part do |part|
           part.root.remove_attribute('Ignorable')
+          
+          # remove mail merge element from settings
+          part.xpath('.//w:mailMerge').each do |mail_merge|
+            mail_merge.remove
+          end
+          
 
           part.xpath('.//w:fldSimple/..').each do |parent|
             parent.children.each do |child|
