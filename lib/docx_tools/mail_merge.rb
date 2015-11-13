@@ -84,9 +84,11 @@ module DocxTools
               match_data = REGEXP.match(child.attribute('instr'))
               next if (child.node_name != 'fldSimple') || !match_data
 
+              r_elem = Nokogiri::XML::Node.new('r', part)
               new_tag = Nokogiri::XML::Node.new('MergeField', part)
+              new_tag.parent = r_elem
               new_tag.content = match_data[1]
-              child.replace(new_tag)
+              child.replace(r_elem)
             end
           end
 
